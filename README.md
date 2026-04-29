@@ -1,6 +1,6 @@
 # Stirling PDF Redirector
 
-Manifest V3 extension for Edge/Chrome that sends PDF links to your own Stirling PDF instance.
+Unofficial Manifest V3 extension for Edge/Chrome that sends PDF links to your own Stirling PDF instance.
 
 It supports:
 
@@ -143,6 +143,10 @@ The settings page provides:
 - Reload the unpacked extension
 - Save the URL again
 - Re-test a PDF navigation in a fresh tab
+
+## Disclaimer
+
+This project is an independent, unofficial browser extension. It is not affiliated with, endorsed by, sponsored by, or otherwise associated with Stirling PDF or its maintainers.
 
 ## Version
 
