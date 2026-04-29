@@ -1,6 +1,7 @@
 const config = globalThis.StirlingConfig;
 const uploadPage = chrome.runtime.getURL("pages/upload.html");
 
+const statusCard = document.getElementById("statusCard");
 const statusText = document.getElementById("statusText");
 const configuredUrl = document.getElementById("configuredUrl");
 const urlInput = document.getElementById("urlInput");
@@ -46,13 +47,17 @@ void initialize();
 async function initialize() {
   const baseUrl = await config.getBaseUrl();
   if (baseUrl) {
-    statusText.innerHTML = `Auto-redirect active to <strong>${escapeHtml(new URL(baseUrl).host)}</strong>`;
-    configuredUrl.textContent = baseUrl;
+    statusCard.classList.remove("inactive");
+    statusText.textContent = "Auto-redirect is active for:";
+    configuredUrl.textContent = baseUrl.replace(/^https?:\/\//, "");
     configuredUrl.href = baseUrl;
+    configuredUrl.title = baseUrl;
   } else {
+    statusCard.classList.add("inactive");
     statusText.textContent = "Set your Stirling URL in Settings to enable redirects.";
-    configuredUrl.textContent = "Not configured";
+    configuredUrl.textContent = "No Stirling instance configured yet";
     configuredUrl.removeAttribute("href");
+    configuredUrl.removeAttribute("title");
     openStirlingBtn.disabled = true;
   }
 }
