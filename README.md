@@ -24,7 +24,6 @@ stirling-pdf-extension/
 ├── background.js
 ├── content_script.js
 ├── config.js
-├── rules.json
 ├── icons/
 └── pages/
     ├── popup.html
@@ -117,12 +116,6 @@ The settings page provides:
 | `storage` | Save the configured Stirling URL |
 | `scripting` | Reserved for extension-side page integration workflows |
 | `host_permissions` | Required for matching web URLs and local file URLs |
-
-## Notes About `rules.json`
-
-`rules.json` is still present in the repository, but the current extension behavior is driven by dynamic rules created in `background.js`.
-
-That means the saved Stirling URL in settings is what matters at runtime.
 
 ## Troubleshooting
 
