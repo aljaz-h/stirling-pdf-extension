@@ -1,6 +1,8 @@
-# Stirling PDF Redirector
+# Redirector for Stirling PDF
 
 Manifest V3 extension for Edge/Chrome that sends PDF links to your own Stirling PDF instance.
+
+> This extension is not affiliated with, endorsed by, sponsored by, or officially connected to Stirling PDF or its maintainers.
 
 It supports:
 
@@ -117,6 +119,16 @@ The settings page provides:
 | `scripting` | Reserved for extension-side page integration workflows |
 | `host_permissions` | Required for matching web URLs and local file URLs |
 
+## Privacy and Security
+
+This extension does not provide or operate a Stirling PDF server. PDF URLs and uploaded local files are sent only to the Stirling PDF instance configured by the user.
+
+Remote PDF redirects pass the original PDF URL to the configured Stirling instance using the `view?url=` parameter. The configured Stirling instance may fetch or process that remote file according to its own configuration and policies.
+
+Local PDF files are read by the extension only for the purpose of handing them to the configured Stirling PDF web UI. Local files are not sent anywhere except to the user-configured Stirling instance.
+
+No analytics, tracking, telemetry, or third-party reporting is included.
+
 ## Troubleshooting
 
 ### Web PDFs are not redirecting
@@ -144,9 +156,29 @@ The settings page provides:
 - Save the URL again
 - Re-test a PDF navigation in a fresh tab
 
+## Compatibility
+
+This extension is designed for user-hosted Stirling PDF instances that expose the standard web UI and `/view?url=` flow.
+
+Some custom deployments, reverse proxies, authentication layers, or modified Stirling PDF frontends may require changes to the handoff logic, especially for local file uploads.
+
+## Known Limitations
+
+- Web redirects only apply to main-frame navigations that match PDF-style URLs.
+- URLs that do not end in `.pdf` may not be detected automatically, even if they return a PDF content type.
+- Local PDF support requires the browser’s “Allow access to file URLs” permission.
+- Local file handoff depends on Stirling PDF’s frontend upload behavior and may break if the UI changes.
+- Remote PDFs behind login pages, cookies, private networks, or expiring links may not be accessible to the configured Stirling instance.
+
 ## Version
 
 Current manifest version: `1.5.0`
+
+## Disclaimer
+
+This project is an independent browser extension and is not affiliated with, endorsed by, sponsored by, or officially connected to Stirling PDF or its maintainers.
+
+“Stirling PDF” is used only to describe compatibility with user-hosted Stirling PDF instances. All trademarks, project names, and logos belong to their respective owners.
 
 ## License
 
