@@ -1,159 +1,160 @@
-# Stirling PDF Redirector — Edge Extension
+# Stirling PDF Redirector
 
-Manifest V3 browser extension for Microsoft Edge (Chromium).  
-Automatically redirects PDF URLs to your self-hosted **Stirling PDF** instance at `https://pdf.arcont.si`.
+Manifest V3 extension for Edge/Chrome that sends PDF links to your own Stirling PDF instance.
 
----
+It supports:
 
-## 📁 File Structure
+- automatic redirect of web PDF URLs
+- opening local PDFs from `file://` tabs
+- a configurable Stirling base URL saved in extension settings
 
-```
+## Features
+
+- Configurable Stirling instance URL through the extension settings page
+- Dynamic redirect rule generation with `chrome.declarativeNetRequest.updateDynamicRules()`
+- Local PDF handoff flow for files opened from Windows Explorer
+- Popup shortcuts for opening Stirling, local files, and settings
+- `chrome.storage.sync` support so the saved URL can follow the user account where supported
+
+## File Structure
+
+```text
 stirling-pdf-extension/
-├── manifest.json          # MV3 manifest
-├── rules.json             # declarativeNetRequest redirect rules
-├── background.js          # Service worker (context menus, messaging)
+├── manifest.json
+├── background.js
+├── content_script.js
+├── config.js
+├── rules.json
 ├── icons/
-│   ├── icon16.png
-│   ├── icon48.png
-│   └── icon128.png
 └── pages/
-    ├── popup.html         # Toolbar popup UI
+    ├── popup.html
     ├── popup.js
-    ├── upload.html        # Local file upload page
+    ├── options.html
+    ├── options.js
+    ├── upload.html
     └── upload.js
 ```
 
----
+## Installation
 
-## 🚀 Installation (Edge)
+1. Open `edge://extensions/` or `chrome://extensions/`
+2. Enable Developer mode
+3. Click `Load unpacked`
+4. Select the `stirling-pdf-extension` folder
+5. Open the extension settings page and enter your Stirling base URL
+6. Optional but recommended for local files: enable `Allow access to file URLs`
 
-1. Open Edge and navigate to: `edge://extensions/`
-2. Enable **Developer mode** (toggle, top-right)
-3. Click **Load unpacked**
-4. Select the `stirling-pdf-extension/` folder
-5. The extension icon (orange PDF) appears in the toolbar
+## Configuration
 
----
+The extension no longer hardcodes a specific Stirling host.
 
-## ✅ How It Works
+Set your Stirling instance in the options page:
 
-### Web PDFs (Automatic)
+- Example: `https://stirling.example.com`
+- Use only the base URL
+- Do not include `/view` or a trailing query string
 
-When you navigate to any URL matching:
+When the URL is saved:
+
+- the background worker stores it in `chrome.storage.sync`
+- the redirect rule is rebuilt dynamically
+- popup, content scripts, and upload flow all start using the saved instance
+
+If no URL is configured yet, the extension opens settings and keeps redirects effectively inactive.
+
+## How Web PDF Redirects Work
+
+For navigations like:
+
+```text
+https://example.com/report.pdf
 ```
-http(s)://anything.com/path/file.pdf[?query]
+
+the extension redirects the main tab to:
+
+```text
+https://your-stirling-host/view?url=https%3A%2F%2Fexample.com%2Freport.pdf
 ```
 
-The extension **automatically redirects** the main frame to:
-```
-https://pdf.arcont.si/view?url=<encoded_original_url>
-```
+The redirect rule is created dynamically in the background worker so the excluded Stirling host always matches the user’s saved configuration.
 
-No clicks needed — happens transparently via `declarativeNetRequest`.
+## How Local PDF Support Works
 
-**Loop prevention:** The regex explicitly excludes `pdf.arcont.si` as the host, and `excludedInitiatorDomains` is set, so no infinite redirect is possible.
+Local PDFs cannot simply be passed to Stirling as filesystem paths. The extension handles them differently:
 
----
+1. A `file://...pdf` tab is intercepted
+2. The extension opens its local upload page
+3. The file is read locally by the extension
+4. The extension opens the configured Stirling site
+5. The file is handed into Stirling’s web UI so it behaves like a user-selected upload
 
-### Local PDF Files (Manual Upload)
+This is designed to mirror the manual drag-and-drop flow as closely as possible.
 
-Browser extensions **cannot read `file://` URLs** — this is a hard sandboxing rule enforced by Chromium. Attempting to redirect `file://` URLs would either silently fail or crash.
+## Popup and Settings
 
-**Solution:** A dedicated upload page.
+The popup provides:
 
-**Two ways to trigger it:**
+- a field for opening a remote PDF URL in Stirling
+- a button for local PDF flow
+- a button to open the configured Stirling dashboard
+- a button to open extension settings
 
-1. **Toolbar popup** → click "⬆ Upload Local PDF File"
-2. **Right-click** any PDF link → "Open in Stirling PDF" (if it's a `file://` link, the upload page opens automatically)
+The settings page provides:
 
-**What happens:**
-- A new tab opens at `chrome-extension://.../pages/upload.html`
-- User drags & drops or clicks to browse for a `.pdf` file
-- The file is `POST`ed to `https://pdf.arcont.si/api/v1/general/upload-and-save`
-- On success, the viewer URL is opened
+- Stirling base URL input
+- save action with validation
+- current configured value display
+- quick open button for the saved instance
 
-> **Note:** The upload endpoint path may differ depending on your Stirling PDF version. Check your instance's Swagger UI at `https://pdf.arcont.si/swagger-ui` and update `UPLOAD_ENDPOINT` in `pages/upload.js` if needed.
+## Permissions
 
----
-
-## 🔑 Permissions Explained
-
-| Permission | Why it's needed |
+| Permission | Why it is used |
 |---|---|
-| `declarativeNetRequest` | Redirect PDF URLs at the network layer (MV3 standard) |
-| `contextMenus` | Add "Open in Stirling PDF" right-click menu |
-| `scripting` | Reserved for potential future content script injection |
-| `tabs` | Open new tabs for viewer / upload page |
-| `storage` | Reserved for future settings (e.g. custom Stirling URL) |
-| `host_permissions: http/https` | Required for `declarativeNetRequest` to match external URLs |
+| `declarativeNetRequest` | Create the automatic PDF redirect rule |
+| `declarativeNetRequestWithHostAccess` | Apply redirect rules against external PDF URLs |
+| `tabs` | Update or open tabs for viewer and local handoff flows |
+| `contextMenus` | Add right-click actions for links, frames, and pages |
+| `storage` | Save the configured Stirling URL |
+| `scripting` | Reserved for extension-side page integration workflows |
+| `host_permissions` | Required for matching web URLs and local file URLs |
 
----
+## Notes About `rules.json`
 
-## 🛡️ What Is NOT Redirected
+`rules.json` is still present in the repository, but the current extension behavior is driven by dynamic rules created in `background.js`.
 
-- `file://` URLs — explicitly excluded (and not matched by the regex)
-- `blob:` and `data:` URLs — not HTTP/HTTPS, regex doesn't match
-- `https://pdf.arcont.si/*` — excluded by regex and `excludedInitiatorDomains`
-- Non-PDF URLs — regex only matches paths ending in `.pdf`
+That means the saved Stirling URL in settings is what matters at runtime.
 
----
+## Troubleshooting
 
-## ⚙️ Customisation
+### Web PDFs are not redirecting
 
-### Change the Stirling instance URL
+- Make sure the extension is enabled
+- Make sure a Stirling URL is saved in settings
+- Confirm the target URL actually ends with `.pdf`
+- Reload the extension after major code changes during development
 
-Edit these files and replace `https://pdf.arcont.si`:
-- `rules.json` → `regexSubstitution` value
-- `rules.json` → `regexFilter` exclusion segment `pdf\\.arcont\\.si`
-- `background.js` → `STIRLING_BASE` constant
-- `pages/popup.js` → `STIRLING_BASE` constant
-- `pages/upload.js` → `STIRLING_BASE` and `UPLOAD_ENDPOINT` constants
+### Local PDFs do not work
 
-### Adjust the upload endpoint
+- Enable `Allow access to file URLs` in the extension details page
+- Make sure a Stirling URL is configured
+- Try opening the Stirling site manually to verify it is reachable
 
-In `pages/upload.js`, update:
-```js
-const UPLOAD_ENDPOINT = `${STIRLING_BASE}/api/v1/general/upload-and-save`;
-```
+### Local handoff fails
 
-Check your Stirling version's API at `/swagger-ui` for the correct path.
+- Your Stirling UI may use a different upload page structure than expected
+- Open the site manually and verify that normal drag-and-drop or file selection works
+- If needed, inspect the page and adjust the content-script handoff logic
 
----
+### Settings save but behavior does not change
 
-## 🔍 Regex Details (rules.json)
+- Reload the unpacked extension
+- Save the URL again
+- Re-test a PDF navigation in a fresh tab
 
-```
-^https?://(?!pdf\.arcont\.si)[^/]+/[^?#]*\.pdf(\?[^#]*)?$
-```
+## Version
 
-Wait — RE2 does **not** support lookaheads. The actual rule uses:
+Current manifest version: `1.5.0`
 
-```
-^https?://(?!pdf\.arcont\.si)...
-```
+## License
 
-Since Edge's `declarativeNetRequest` uses a slightly relaxed RE2 subset that **does** allow `(?!...)` in practice (Chromium's implementation), but to be safe, the `excludedInitiatorDomains` field provides a second layer of loop prevention that is 100% RE2 compatible and doesn't rely on the regex at all.
-
----
-
-## 🐛 Troubleshooting
-
-**PDFs aren't being redirected**
-- Make sure Developer Mode is on and the extension is enabled
-- Open `edge://extensions/` → click the extension → check for errors
-- Confirm the URL ends in `.pdf` (some URLs hide the extension — those won't match)
-
-**Upload fails**
-- Verify your Stirling instance is reachable at `https://pdf.arcont.si`
-- Check the Swagger UI for the correct upload endpoint
-- Look at the browser DevTools Network tab on the upload page for error details
-
-**Context menu doesn't appear**
-- Right-click directly on a link, not on blank space (for "open-pdf-link" item)
-- "Open current page in Stirling PDF" appears on the page background
-
----
-
-## 📄 License
-
-MIT — modify freely for your self-hosted setup.
+MIT

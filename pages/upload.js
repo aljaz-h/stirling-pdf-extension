@@ -1,7 +1,4 @@
-const STIRLING_BASE = "https://pdf.arcont.si";
-const VIEW_ENDPOINT = `${STIRLING_BASE}/view`;
-const STORAGE_UPLOAD_ENDPOINT = `${STIRLING_BASE}/api/v1/storage/files`;
-const LEGACY_UPLOAD_ENDPOINT = `${STIRLING_BASE}/api/v1/general/upload-and-save`;
+const config = globalThis.StirlingConfig;
 
 const dropZone = document.getElementById("dropZone");
 const fileInput = document.getElementById("fileInput");
@@ -16,6 +13,7 @@ const statusBox = document.getElementById("statusBox");
 const localNotice = document.getElementById("localNotice");
 const localFilenameEl = document.getElementById("localFilename");
 const sourceUrl = new URLSearchParams(window.location.search).get("source");
+const openSettingsBtn = document.getElementById("openSettingsBtn");
 
 let selectedFile = null;
 let uploadInProgress = false;
@@ -47,13 +45,27 @@ fileInput.addEventListener("change", () => {
   if (file) handleFile(file);
 });
 
-uploadBtn.addEventListener("click", async () => {
-  await startUpload();
+uploadBtn.addEventListener("click", () => {
+  void startUpload();
 });
 
-initializeLocalSource();
+openSettingsBtn.addEventListener("click", async () => {
+  await chrome.runtime.openOptionsPage();
+});
+
+void initializeLocalSource();
 
 async function initializeLocalSource() {
+  const baseUrl = await config.getBaseUrl();
+  if (!baseUrl) {
+    showStatus(
+      "error",
+      `Set your Stirling URL in <strong>Extension Settings</strong> before opening local PDFs.`
+    );
+    uploadBtn.disabled = true;
+    return;
+  }
+
   if (!sourceUrl) return;
 
   showStatus("success", "Reading the local PDF you opened in Edge...");
@@ -94,6 +106,13 @@ function handleFile(file) {
 async function startUpload() {
   if (!selectedFile || uploadInProgress) return;
 
+  const baseUrl = await config.getBaseUrl();
+  if (!baseUrl) {
+    showStatus("error", "Set your Stirling URL in Extension Settings first.");
+    uploadBtn.disabled = true;
+    return;
+  }
+
   uploadInProgress = true;
   uploadBtn.disabled = true;
   progressWrap.classList.add("visible");
@@ -102,21 +121,6 @@ async function startUpload() {
   try {
     await openInStirlingUi(selectedFile);
     showStatus("success", "Opening the PDF in Stirling...");
-  } catch (err) {
-    try {
-      const resultUrl = await uploadFile(selectedFile);
-      showStatus("success", "Uploaded. Opening in viewer...");
-      setTimeout(() => {
-        window.location.href = resultUrl;
-      }, 800);
-    } catch (uploadError) {
-      showStatus(
-        "error",
-        `Upload failed: ${uploadError.message}<br><br>Fallback: <a href="${STIRLING_BASE}" target="_blank" style="color:inherit">Open Stirling PDF manually</a> and drag your file there.`
-      );
-      uploadBtn.disabled = false;
-      progressWrap.classList.remove("visible");
-    }
   } finally {
     uploadInProgress = false;
   }
@@ -167,109 +171,14 @@ function openInStirlingUi(file) {
         );
       })
       .catch(reject);
-  });
-}
-
-function uploadFile(file) {
-  return tryUploadStrategies(file);
-}
-
-async function tryUploadStrategies(file) {
-  const attempts = [];
-
-  const strategies = [
-    {
-      label: "server storage API",
-      run: () => uploadWithStorageApi(file),
-    },
-    {
-      label: "legacy upload API",
-      run: () => uploadWithLegacyApi(file),
-    },
-  ];
-
-  for (const strategy of strategies) {
-    try {
-      return await strategy.run();
-    } catch (error) {
-      attempts.push(`${strategy.label}: ${error.message}`);
-    }
-  }
-
-  throw new Error(attempts.join(" | "));
-}
-
-function uploadWithStorageApi(file) {
-  const formData = new FormData();
-  formData.append("file", file, file.name);
-
-  return sendMultipartRequest({
-    endpoint: STORAGE_UPLOAD_ENDPOINT,
-    formData,
-    onSuccess: (responseText) => {
-      const json = safeJsonParse(responseText);
-      const fileId = json?.id;
-      if (!fileId) {
-        throw new Error("Upload succeeded but no stored file ID was returned.");
-      }
-
-      const sourceUrl = `${STIRLING_BASE}/api/v1/storage/files/${encodeURIComponent(fileId)}/download?inline=true`;
-      return `${VIEW_ENDPOINT}?url=${encodeURIComponent(sourceUrl)}`;
-    },
-  });
-}
-
-function uploadWithLegacyApi(file) {
-  const formData = new FormData();
-  formData.append("fileInput", file, file.name);
-
-  return sendMultipartRequest({
-    endpoint: LEGACY_UPLOAD_ENDPOINT,
-    formData,
-    onSuccess: (responseText) => {
-      const json = safeJsonParse(responseText);
-      if (json?.url) {
-        return json.url.startsWith("http") ? json.url : STIRLING_BASE + json.url;
-      }
-      if (json?.fileId) {
-        return `${VIEW_ENDPOINT}?fileId=${encodeURIComponent(json.fileId)}`;
-      }
-      return STIRLING_BASE;
-    },
-  });
-}
-
-function sendMultipartRequest({ endpoint, formData, onSuccess }) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.withCredentials = true;
-
-    xhr.upload.addEventListener("progress", (e) => {
-      if (!e.lengthComputable) return;
-
-      const pct = Math.round((e.loaded / e.total) * 100);
-      progressBar.style.width = `${pct}%`;
-      progressPct.textContent = `${pct}%`;
-    });
-
-    xhr.addEventListener("load", () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          resolve(onSuccess(xhr.responseText));
-        } catch (error) {
-          reject(error);
-        }
-        return;
-      }
-
-      reject(new Error(formatHttpError(xhr)));
-    });
-
-    xhr.addEventListener("error", () => reject(new Error("Network error. Is your Stirling instance reachable?")));
-    xhr.addEventListener("abort", () => reject(new Error("Upload cancelled.")));
-    xhr.open("POST", endpoint);
-    xhr.setRequestHeader("Accept", "application/json");
-    xhr.send(formData);
+  }).catch((error) => {
+    showStatus(
+      "error",
+      `${error.message}<br><br>Fallback: open your Stirling site manually and drag the PDF there.`
+    );
+    uploadBtn.disabled = false;
+    progressWrap.classList.remove("visible");
+    throw error;
   });
 }
 
@@ -303,42 +212,6 @@ function fileToBase64(file) {
     reader.onerror = () => reject(new Error("The local PDF could not be prepared for Stirling."));
     reader.readAsDataURL(file);
   });
-}
-
-function safeJsonParse(value) {
-  try {
-    return JSON.parse(value);
-  } catch {
-    return null;
-  }
-}
-
-function formatHttpError(xhr) {
-  const statusLine = `HTTP ${xhr.status}${xhr.statusText ? `: ${xhr.statusText}` : ""}`;
-  const detail = extractErrorDetail(xhr.responseText);
-  return detail ? `${statusLine} - ${detail}` : statusLine;
-}
-
-function extractErrorDetail(responseText) {
-  if (!responseText) return "";
-
-  const json = safeJsonParse(responseText);
-  if (json) {
-    const candidates = [
-      json.message,
-      json.error,
-      json.reason,
-      json.details,
-      json.path,
-    ].filter(Boolean);
-    if (candidates.length > 0) {
-      return candidates.join(" | ");
-    }
-  }
-
-  const compact = String(responseText).replace(/\s+/g, " ").trim();
-  if (!compact) return "";
-  return compact.slice(0, 220);
 }
 
 function showStatus(type, html) {

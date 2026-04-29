@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Stirling PDF Redirector",
-  "version": "1.6.0",
-  "description": "Redirect PDF files to your self-hosted Stirling PDF instance. Supports web PDFs (auto-redirect) and local files (via upload).",
+  "version": "1.5.0",
+  "description": "Redirect PDF files to your self-hosted Stirling PDF instance. Supports web PDFs and local files.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -30,6 +30,7 @@
         "file:///*"
       ],
       "js": [
+        "config.js",
         "content_script.js"
       ],
       "run_at": "document_start",
@@ -40,15 +41,7 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "declarative_net_request": {
-    "rule_resources": [
-      {
-        "id": "ruleset_pdf",
-        "enabled": true,
-        "path": "rules.json"
-      }
-    ]
-  },
+  "options_page": "pages/options.html",
   "action": {
     "default_popup": "pages/popup.html",
     "default_icon": {

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stirling PDF Settings</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2a2d3a;
+      --accent: #f97316;
+      --accent2: #fb923c;
+      --text: #e8eaf0;
+      --muted: #6b7280;
+      --success: #22c55e;
+      --error: #ef4444;
+      --radius: 14px;
+      --font: "DM Mono", "Fira Code", "Courier New", monospace;
+    }
+
+    body {
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top right, rgba(249, 115, 22, 0.12), transparent 28%),
+        linear-gradient(180deg, #0f1117 0%, #111520 100%);
+      color: var(--text);
+      font-family: var(--font);
+      padding: 32px 20px;
+    }
+
+    .wrap {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: rgba(26, 29, 39, 0.92);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+    }
+
+    .eyebrow {
+      color: var(--accent);
+      font-size: 12px;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      font-size: 28px;
+      margin-bottom: 10px;
+      letter-spacing: -0.5px;
+    }
+
+    .intro {
+      color: var(--muted);
+      line-height: 1.7;
+      font-size: 14px;
+      margin-bottom: 28px;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      margin-bottom: 8px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    input[type="url"] {
+      width: 100%;
+      background: #11141c;
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-family: var(--font);
+      font-size: 14px;
+      outline: none;
+    }
+
+    input[type="url"]:focus {
+      border-color: var(--accent);
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+      margin-top: 10px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 22px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-family: var(--font);
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff;
+      font-weight: 700;
+    }
+
+    .secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .status {
+      display: none;
+      margin-top: 18px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      line-height: 1.6;
+      font-size: 13px;
+    }
+
+    .status.success {
+      display: block;
+      background: rgba(34, 197, 94, 0.08);
+      border: 1px solid rgba(34, 197, 94, 0.22);
+      color: var(--success);
+    }
+
+    .status.error {
+      display: block;
+      background: rgba(239, 68, 68, 0.08);
+      border: 1px solid rgba(239, 68, 68, 0.22);
+      color: var(--error);
+    }
+
+    .current {
+      margin-top: 22px;
+      padding-top: 18px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.7;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="eyebrow">Extension Settings</div>
+      <h1>Configure your Stirling URL</h1>
+      <p class="intro">
+        Enter the base URL of the Stirling PDF instance this extension should use for redirects and local PDF handoff.
+      </p>
+
+      <label for="baseUrlInput">Stirling Base URL</label>
+      <input
+        id="baseUrlInput"
+        type="url"
+        placeholder="https://your-stirling.example.com"
+        autocomplete="url"
+      />
+
+      <p class="hint">
+        Use only the base address. Example: <code>https://stirling.example.com</code>
+      </p>
+
+      <div class="actions">
+        <button class="primary" id="saveBtn">Save Settings</button>
+        <button class="secondary" id="openBtn">Open Stirling</button>
+      </div>
+
+      <div class="status" id="statusBox"></div>
+      <div class="current" id="currentValue">Current value: not configured</div>
+    </div>
+  </div>
+
+  <script src="../config.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

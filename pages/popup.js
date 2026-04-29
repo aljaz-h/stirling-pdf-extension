@@ -1,37 +1,87 @@
-// ─── Stirling PDF – Popup Script ──────────────────────────────────────────────
+const config = globalThis.StirlingConfig;
+const uploadPage = chrome.runtime.getURL("pages/upload.html");
 
-const STIRLING_BASE  = "https://pdf.arcont.si";
-const STIRLING_VIEW  = `${STIRLING_BASE}/view`;
-const UPLOAD_PAGE    = chrome.runtime.getURL("pages/upload.html");
+const statusText = document.getElementById("statusText");
+const configuredUrl = document.getElementById("configuredUrl");
+const urlInput = document.getElementById("urlInput");
+const goBtn = document.getElementById("goBtn");
+const uploadLocalBtn = document.getElementById("uploadLocalBtn");
+const openStirlingBtn = document.getElementById("openStirlingBtn");
+const openSettingsBtn = document.getElementById("openSettingsBtn");
 
-document.getElementById("uploadLocalBtn").addEventListener("click", () => {
-  chrome.tabs.create({ url: UPLOAD_PAGE });
+uploadLocalBtn.addEventListener("click", () => {
+  chrome.tabs.create({ url: uploadPage });
   window.close();
 });
 
-document.getElementById("openStirlingBtn").addEventListener("click", () => {
-  chrome.tabs.create({ url: STIRLING_BASE });
-  window.close();
-});
-
-document.getElementById("goBtn").addEventListener("click", navigateUrl);
-document.getElementById("urlInput").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") navigateUrl();
-});
-
-function navigateUrl() {
-  const raw = document.getElementById("urlInput").value.trim();
-  if (!raw) return;
-
-  // Prevent redirecting Stirling itself or file:// blob: etc.
-  if (raw.startsWith("file://") || raw.startsWith("blob:") || raw.startsWith("data:")) {
-    chrome.tabs.create({ url: UPLOAD_PAGE });
+openStirlingBtn.addEventListener("click", async () => {
+  const baseUrl = await config.getBaseUrl();
+  if (!baseUrl) {
+    await chrome.runtime.openOptionsPage();
     window.close();
     return;
   }
 
-  const url = raw.startsWith("http") ? raw : `https://${raw}`;
-  const viewerUrl = `${STIRLING_VIEW}?url=${encodeURIComponent(url)}`;
-  chrome.tabs.create({ url: viewerUrl });
+  chrome.tabs.create({ url: baseUrl });
   window.close();
+});
+
+openSettingsBtn.addEventListener("click", async () => {
+  await chrome.runtime.openOptionsPage();
+  window.close();
+});
+
+goBtn.addEventListener("click", () => {
+  void navigateUrl();
+});
+
+urlInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    void navigateUrl();
+  }
+});
+
+void initialize();
+
+async function initialize() {
+  const baseUrl = await config.getBaseUrl();
+  if (baseUrl) {
+    statusText.innerHTML = `Auto-redirect active to <strong>${escapeHtml(new URL(baseUrl).host)}</strong>`;
+    configuredUrl.textContent = baseUrl;
+    configuredUrl.href = baseUrl;
+  } else {
+    statusText.textContent = "Set your Stirling URL in Settings to enable redirects.";
+    configuredUrl.textContent = "Not configured";
+    configuredUrl.removeAttribute("href");
+    openStirlingBtn.disabled = true;
+  }
+}
+
+async function navigateUrl() {
+  const baseUrl = await config.getBaseUrl();
+  if (!baseUrl) {
+    await chrome.runtime.openOptionsPage();
+    window.close();
+    return;
+  }
+
+  const raw = urlInput.value.trim();
+  if (!raw) return;
+
+  if (raw.startsWith("file://") || raw.startsWith("blob:") || raw.startsWith("data:")) {
+    chrome.tabs.create({ url: uploadPage });
+    window.close();
+    return;
+  }
+
+  const url = raw.startsWith("http://") || raw.startsWith("https://") ? raw : `https://${raw}`;
+  chrome.tabs.create({ url: config.buildViewerUrl(baseUrl, url) });
+  window.close();
+}
+
+function escapeHtml(value) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }

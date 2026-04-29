@@ -219,6 +219,10 @@
       Upload and Open in Stirling PDF
     </button>
 
+    <button class="btn" id="openSettingsBtn" style="background:#11141c;border:1px solid var(--border);margin-top:10px;">
+      Extension Settings
+    </button>
+
     <div class="progress-wrap" id="progressWrap">
       <div class="progress-label">
         <span>Uploading...</span>
@@ -234,10 +238,11 @@
     <div class="note">
       <strong>Why upload?</strong> Stirling PDF cannot open a file path from your computer directly, so the
       extension reads the local PDF and uploads it over an encrypted connection to
-      <strong>pdf.arcont.si</strong> - your own self-hosted instance.
+      your configured <strong>Stirling PDF</strong> instance.
     </div>
   </div>
 
+  <script src="../config.js"></script>
   <script src="upload.js"></script>
 </body>
 </html>

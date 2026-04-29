@@ -1,34 +1,45 @@
 (function () {
-  const STIRLING_BASE = "https://pdf.arcont.si";
-  const STIRLING_VIEW = `${STIRLING_BASE}/view`;
-  const UPLOAD_PAGE = chrome.runtime.getURL("pages/upload.html");
+  const config = globalThis.StirlingConfig;
+  const uploadPage = chrome.runtime.getURL("pages/upload.html");
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type !== "INJECT_LOCAL_PDF") return false;
 
-    injectLocalPdfIntoStirling(message)
-      .then(() => sendResponse({ ok: true }))
-      .catch((error) => sendResponse({ ok: false, reason: error.message }));
+    void (async () => {
+      try {
+        await injectLocalPdfIntoStirling(message);
+        sendResponse({ ok: true });
+      } catch (error) {
+        sendResponse({ ok: false, reason: error.message });
+      }
+    })();
 
     return true;
   });
 
-  const url = window.location.href;
-  if (url.startsWith(STIRLING_BASE)) return;
+  void initialize();
 
-  const isPdf = document.contentType === "application/pdf";
-  if (!isPdf) return;
+  async function initialize() {
+    const baseUrl = await config.getBaseUrl();
+    if (!baseUrl) return;
 
-  if (url.startsWith("http://") || url.startsWith("https://")) {
-    window.location.replace(`${STIRLING_VIEW}?url=${encodeURIComponent(url)}`);
-    return;
-  }
+    const url = window.location.href;
+    if (url.startsWith(baseUrl)) return;
 
-  if (url.startsWith("file://")) {
-    const uploadUrl = new URL(UPLOAD_PAGE);
-    uploadUrl.searchParams.set("source", url);
-    uploadUrl.hash = encodeURIComponent(getFilenameFromUrl(url));
-    window.location.replace(uploadUrl.toString());
+    const isPdf = document.contentType === "application/pdf";
+    if (!isPdf) return;
+
+    if (url.startsWith("http://") || url.startsWith("https://")) {
+      window.location.replace(config.buildViewerUrl(baseUrl, url));
+      return;
+    }
+
+    if (url.startsWith("file://")) {
+      const uploadUrl = new URL(uploadPage);
+      uploadUrl.searchParams.set("source", url);
+      uploadUrl.hash = encodeURIComponent(getFilenameFromUrl(url));
+      window.location.replace(uploadUrl.toString());
+    }
   }
 
   function getFilenameFromUrl(fileUrl) {
@@ -41,8 +52,9 @@
   }
 
   async function injectLocalPdfIntoStirling(message) {
-    if (!window.location.href.startsWith(STIRLING_BASE)) {
-      throw new Error("Not on the Stirling site yet.");
+    const baseUrl = await config.getBaseUrl();
+    if (!baseUrl || !window.location.href.startsWith(baseUrl)) {
+      throw new Error("Not on the configured Stirling site yet.");
     }
 
     const file = base64ToFile(message.base64Data, message.fileName, message.mimeType);

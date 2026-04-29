@@ -1,32 +1,129 @@
-const STIRLING_BASE = "https://pdf.arcont.si";
-const STIRLING_VIEW = `${STIRLING_BASE}/view`;
+const CONFIG_KEY = "stirlingBaseUrl";
+const REDIRECT_RULE_ID = 1001;
 const UPLOAD_PAGE = chrome.runtime.getURL("pages/upload.html");
 
 const REMOTE_PDF_URL_RE = /^https?:\/\/[^/]+\/[^?#]*\.pdf([?#].*)?$/i;
 const LOCAL_PDF_URL_RE = /^file:\/\/\/.+\.pdf([?#].*)?$/i;
 
+chrome.runtime.onInstalled.addListener(async () => {
+  await ensureContextMenus();
+  await refreshRedirectRule();
+
+  const baseUrl = await getConfiguredBaseUrl();
+  if (!baseUrl) {
+    chrome.runtime.openOptionsPage();
+  }
+});
+
+chrome.runtime.onStartup.addListener(async () => {
+  await refreshRedirectRule();
+});
+
+chrome.storage.onChanged.addListener(async (changes, areaName) => {
+  if (areaName !== "sync" || !changes[CONFIG_KEY]) return;
+  await refreshRedirectRule();
+});
+
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  void handleTabUpdated(tabId, changeInfo, tab);
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  void handleContextMenuClick(info, tab);
+});
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "OPEN_UPLOAD_TAB") {
+    openUploadTab(message.fileUrl)
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, reason: error.message }));
+    return true;
+  }
+
+  if (message.type === "OPEN_IN_STIRLING_UI") {
+    openInStirlingUi(message, sender.tab?.id)
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, reason: error.message }));
+    return true;
+  }
+
+  if (message.type === "REDIRECT_URL") {
+    redirectUrl(message.url)
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, reason: error.message }));
+    return true;
+  }
+
+  if (message.type === "GET_STIRLING_CONFIG") {
+    getConfiguredBaseUrl()
+      .then((baseUrl) => sendResponse({ ok: true, baseUrl }))
+      .catch((error) => sendResponse({ ok: false, reason: error.message }));
+    return true;
+  }
+
+  return false;
+});
+
+async function handleTabUpdated(tabId, changeInfo, tab) {
   if (changeInfo.status !== "loading" && !changeInfo.url) return;
+
+  const baseUrl = await getConfiguredBaseUrl();
+  if (!baseUrl) return;
 
   const url = changeInfo.url || tab.url;
   if (!url) return;
-  if (url.startsWith(STIRLING_BASE) || url.startsWith(UPLOAD_PAGE)) return;
+  if (url.startsWith(baseUrl) || url.startsWith(UPLOAD_PAGE)) return;
 
   if (REMOTE_PDF_URL_RE.test(url)) {
-    const viewerUrl = `${STIRLING_VIEW}?url=${encodeURIComponent(url)}`;
-    console.log("[Stirling PDF] remote PDF intercept:", url, "->", viewerUrl);
+    const viewerUrl = buildViewerUrl(baseUrl, url);
     chrome.tabs.update(tabId, { url: viewerUrl });
     return;
   }
 
   if (LOCAL_PDF_URL_RE.test(url)) {
     const uploadUrl = buildUploadUrl(url);
-    console.log("[Stirling PDF] local PDF intercept:", url, "->", uploadUrl);
     chrome.tabs.update(tabId, { url: uploadUrl });
   }
-});
+}
 
-chrome.runtime.onInstalled.addListener(() => {
+async function handleContextMenuClick(info, tab) {
+  switch (info.menuItemId) {
+    case "open-pdf-link": {
+      const url = info.linkUrl;
+      if (!url) return;
+      if (url.startsWith("file://")) {
+        await openUploadTab(url, tab);
+      } else {
+        await openInStirling(url, tab);
+      }
+      break;
+    }
+    case "open-current-page": {
+      const url = tab?.url;
+      if (!url) return;
+      if (url.startsWith("file://")) {
+        await openUploadTab(url, tab);
+      } else {
+        await openInStirling(url, tab);
+      }
+      break;
+    }
+    case "open-pdf-frame": {
+      const url = info.frameUrl || info.srcUrl;
+      if (!url) return;
+      if (url.startsWith("file://")) {
+        await openUploadTab(url, tab);
+      } else {
+        await openInStirling(url, tab);
+      }
+      break;
+    }
+  }
+}
+
+async function ensureContextMenus() {
+  await chrome.contextMenus.removeAll();
+
   chrome.contextMenus.create({
     id: "open-pdf-link",
     title: "Open in Stirling PDF",
@@ -44,91 +141,74 @@ chrome.runtime.onInstalled.addListener(() => {
     title: "Open in Stirling PDF",
     contexts: ["frame"],
   });
+}
 
-  console.log("[Stirling PDF] ready.");
-});
+async function refreshRedirectRule() {
+  const baseUrl = await getConfiguredBaseUrl();
+  const host = baseUrl ? new URL(baseUrl).hostname : null;
 
-chrome.contextMenus.onClicked.addListener((info, tab) => {
-  switch (info.menuItemId) {
-    case "open-pdf-link": {
-      const url = info.linkUrl;
-      if (!url) return;
-      if (url.startsWith("file://")) {
-        openUploadTab(url, tab);
-      } else {
-        openInStirling(url, tab);
-      }
-      break;
-    }
-    case "open-current-page": {
-      const url = tab?.url;
-      if (!url) return;
-      if (url.startsWith("file://")) {
-        openUploadTab(url, tab);
-      } else {
-        openInStirling(url, tab);
-      }
-      break;
-    }
-    case "open-pdf-frame": {
-      const url = info.frameUrl || info.srcUrl;
-      if (!url) return;
-      if (url.startsWith("file://")) {
-        openUploadTab(url, tab);
-      } else {
-        openInStirling(url, tab);
-      }
-      break;
-    }
-  }
-});
-
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === "OPEN_UPLOAD_TAB") {
-    openUploadTab(message.fileUrl);
-    sendResponse({ ok: true });
+  const addRules = [];
+  if (baseUrl && host) {
+    addRules.push({
+      id: REDIRECT_RULE_ID,
+      priority: 1,
+      action: {
+        type: "redirect",
+        redirect: {
+          regexSubstitution: `${baseUrl}/view?url=\\0`,
+        },
+      },
+      condition: {
+        regexFilter: "^https?://[^/]+/[^?#]*\\.[Pp][Dd][Ff]([?#].*)?$",
+        resourceTypes: ["main_frame"],
+        excludedRequestDomains: [host],
+        excludedInitiatorDomains: [host],
+      },
+    });
   }
 
-  if (message.type === "OPEN_IN_STIRLING_UI") {
-    openInStirlingUi(message, sender.tab?.id)
-      .then(() => sendResponse({ ok: true }))
-      .catch((error) => sendResponse({ ok: false, reason: error.message }));
-    return true;
+  await chrome.declarativeNetRequest.updateDynamicRules({
+    removeRuleIds: [REDIRECT_RULE_ID],
+    addRules,
+  });
+}
+
+async function redirectUrl(url) {
+  if (!url) {
+    throw new Error("Invalid URL");
   }
 
-  if (message.type === "REDIRECT_URL") {
-    const { url } = message;
-    if (url && url.startsWith("http")) {
-      openInStirling(url, null);
-      sendResponse({ ok: true });
-    } else if (url && url.startsWith("file://")) {
-      openUploadTab(url);
-      sendResponse({ ok: true });
-    } else {
-      sendResponse({ ok: false, reason: "Invalid URL" });
-    }
+  if (url.startsWith("file://")) {
+    await openUploadTab(url);
+    return;
   }
 
-  return false;
-});
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    await openInStirling(url, null);
+    return;
+  }
 
-function openInStirling(originalUrl, tab) {
-  if (originalUrl.startsWith(STIRLING_BASE)) return;
+  throw new Error("Invalid URL");
+}
 
-  const viewerUrl = `${STIRLING_VIEW}?url=${encodeURIComponent(originalUrl)}`;
-  if (tab?.id && !tab.url?.startsWith(STIRLING_BASE)) {
-    chrome.tabs.update(tab.id, { url: viewerUrl });
+async function openInStirling(originalUrl, tab) {
+  const baseUrl = await requireConfiguredBaseUrl();
+  if (originalUrl.startsWith(baseUrl)) return;
+
+  const viewerUrl = buildViewerUrl(baseUrl, originalUrl);
+  if (tab?.id && !tab.url?.startsWith(baseUrl)) {
+    await updateTab(tab.id, viewerUrl);
   } else {
-    chrome.tabs.create({ url: viewerUrl });
+    await createTab(viewerUrl);
   }
 }
 
-function openUploadTab(fileUrl = null, tab = null) {
+async function openUploadTab(fileUrl = null, tab = null) {
   const targetUrl = buildUploadUrl(fileUrl);
   if (tab?.id) {
-    chrome.tabs.update(tab.id, { url: targetUrl });
+    await updateTab(tab.id, targetUrl);
   } else {
-    chrome.tabs.create({ url: targetUrl });
+    await createTab(targetUrl);
   }
 }
 
@@ -151,8 +231,8 @@ function getFilenameFromUrl(fileUrl) {
 }
 
 async function openInStirlingUi(message, currentTabId) {
-  const targetUrl = STIRLING_BASE;
-  const tabId = await openOrReuseTab(targetUrl, currentTabId);
+  const baseUrl = await requireConfiguredBaseUrl();
+  const tabId = await openOrReuseTab(baseUrl, currentTabId);
   await waitForTabLoad(tabId);
   await deliverFileToTab(tabId, {
     type: "INJECT_LOCAL_PDF",
@@ -162,26 +242,11 @@ async function openInStirlingUi(message, currentTabId) {
   });
 }
 
-function openOrReuseTab(url, currentTabId) {
-  return new Promise((resolve, reject) => {
-    const done = (tab) => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-        return;
-      }
-      if (!tab?.id) {
-        reject(new Error("Unable to open the Stirling tab."));
-        return;
-      }
-      resolve(tab.id);
-    };
-
-    if (currentTabId) {
-      chrome.tabs.update(currentTabId, { url }, done);
-    } else {
-      chrome.tabs.create({ url }, done);
-    }
-  });
+async function openOrReuseTab(url, currentTabId) {
+  if (currentTabId) {
+    return updateTab(currentTabId, url);
+  }
+  return createTab(url);
 }
 
 function waitForTabLoad(tabId) {
@@ -248,5 +313,70 @@ function deliverFileToTab(tabId, payload) {
     };
 
     trySend();
+  });
+}
+
+async function getConfiguredBaseUrl() {
+  const result = await chrome.storage.sync.get(CONFIG_KEY);
+  return normalizeBaseUrl(result[CONFIG_KEY] || "");
+}
+
+async function requireConfiguredBaseUrl() {
+  const baseUrl = await getConfiguredBaseUrl();
+  if (baseUrl) return baseUrl;
+
+  chrome.runtime.openOptionsPage();
+  throw new Error("Set your Stirling URL in the extension settings first.");
+}
+
+function normalizeBaseUrl(value) {
+  if (!value) return "";
+
+  try {
+    const url = new URL(String(value).trim());
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return "";
+    }
+    url.hash = "";
+    url.search = "";
+    return url.href.replace(/\/+$/, "");
+  } catch {
+    return "";
+  }
+}
+
+function buildViewerUrl(baseUrl, originalUrl) {
+  return `${baseUrl}/view?url=${encodeURIComponent(originalUrl)}`;
+}
+
+function updateTab(tabId, url) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.update(tabId, { url }, (tab) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      if (!tab?.id) {
+        reject(new Error("Unable to update the tab."));
+        return;
+      }
+      resolve(tab.id);
+    });
+  });
+}
+
+function createTab(url) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.create({ url }, (tab) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      if (!tab?.id) {
+        reject(new Error("Unable to create the tab."));
+        return;
+      }
+      resolve(tab.id);
+    });
   });
 }
